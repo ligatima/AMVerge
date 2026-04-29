@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ClipItem, EpisodeEntry } from "../types/domain"
 import { fileNameFromPath, truncateFileName, detectScenes } from "../utils/episodeUtils";
+import { loadAppSettings } from "../appSettings";
 type ImportExportProps = {
   abortedRef: React.MutableRefObject<boolean>;
   clips: ClipItem[];
@@ -70,7 +71,8 @@ export default function useImportExport(props: ImportExportProps) {
       props.setVideoIsHEVC(null);
       setImportToken(Date.now().toString());
 
-      const formatted = await detectScenes(file, episodeId);
+      const { useImprovedDetection } = loadAppSettings();
+      const formatted = await detectScenes(file, episodeId, useImprovedDetection);
 
       // A newer import started while we were waiting — discard stale results.
       if (importGenRef.current !== gen) return;
@@ -131,7 +133,8 @@ export default function useImportExport(props: ImportExportProps) {
         props.setProgressMsg("Starting...");
 
         try {
-          const formatted = await detectScenes(file, episodeId);
+          const { useImprovedDetection } = loadAppSettings();
+          const formatted = await detectScenes(file, episodeId, useImprovedDetection);
 
           if (props.abortedRef.current || importGenRef.current !== gen) {
             // Aborted or superseded mid-flight — clean up this episode's cache

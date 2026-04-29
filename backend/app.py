@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import subprocess
@@ -149,6 +150,122 @@ def generate_thumbnails(output_dir: str, scenes: list[dict[str, Any]], file_name
                 emit_progress(90, f"Generating thumbnails... {completed}/{total}")
 
 
+def concatenate_clips(input_paths: list[str], output_path: str) -> None:
+    """Concatenate clips using ffmpeg concat demux (no re-encode)."""
+    list_content = ""
+    for path in input_paths:
+        escaped = path.replace("'", "'\\''")
+        list_content += f"file '{escaped}'\n"
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(list_content)
+        list_file = f.name
+
+    try:
+        cmd = [
+            FFMPEG, "-y", "-f", "concat", "-safe", "0",
+            "-i", list_file, "-c", "copy", output_path,
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        log(result.stdout)
+        log(result.stderr)
+        if result.returncode != 0:
+            tail = result.stderr[-2000:] if result.stderr else "No stderr output."
+            raise RuntimeError(f"ffmpeg concat failed with code {result.returncode}: {tail}")
+    finally:
+        try:
+            os.unlink(list_file)
+        except Exception:
+            pass
+
+
+def merge_same_scene_clips(
+    scenes: list[dict[str, Any]],
+    output_dir: str,
+    file_name: str,
+) -> list[dict[str, Any]]:
+    """Merge adjacent clips that appear to be the same scene."""
+    from utils.improved_scene_detect import find_same_scene_pairs
+
+    if len(scenes) <= 1:
+        return scenes
+
+    thumbnail_paths = [s["thumbnail"] for s in scenes]
+    same_scene = find_same_scene_pairs(thumbnail_paths)
+    log(f"Same-scene pairs: {same_scene}")
+
+    # Group consecutive same-scene clips together.
+    groups: list[list[int]] = []
+    current: list[int] = [0]
+    for i, should_merge in enumerate(same_scene):
+        if should_merge:
+            current.append(i + 1)
+        else:
+            groups.append(current)
+            current = [i + 1]
+    groups.append(current)
+
+    merged_scenes: list[dict[str, Any]] = []
+    new_index = 0
+
+    for group in groups:
+        if len(group) == 1:
+            scene = dict(scenes[group[0]])
+            scene["scene_index"] = new_index
+            merged_scenes.append(scene)
+            new_index += 1
+        else:
+            group_paths = [scenes[i]["path"] for i in group]
+            merged_path = os.path.join(output_dir, f"{file_name}_{new_index:04d}_merged.mp4")
+            thumb_path = os.path.join(output_dir, f"{file_name}_{new_index:04d}_merged.jpg")
+
+            try:
+                concatenate_clips(group_paths, merged_path)
+
+                for p in group_paths:
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+                for i in group:
+                    old_thumb = scenes[i].get("thumbnail", "")
+                    if old_thumb and os.path.exists(old_thumb):
+                        try:
+                            os.remove(old_thumb)
+                        except Exception:
+                            pass
+
+                make_thumbnail(merged_path, thumb_path)
+
+                first = scenes[group[0]]
+                last = scenes[group[-1]]
+                merged_scenes.append({
+                    "scene_index": new_index,
+                    "start": first["start"],
+                    "end": last["end"],
+                    "path": merged_path,
+                    "thumbnail": thumb_path,
+                    "original_file": first["original_file"],
+                })
+                new_index += 1
+            except Exception as error:
+                log(f"Failed to merge group {group}: {error}")
+                for idx, i in enumerate(group):
+                    scene = dict(scenes[i])
+                    scene["scene_index"] = new_index + idx
+                    merged_scenes.append(scene)
+                new_index += len(group)
+
+    log(f"After improved detection: {len(scenes)} clips → {len(merged_scenes)} scenes")
+    return merged_scenes
+
+
 def run_ffmpeg_segment(video_path: str, output_pattern: str, cut_points: list[float]) -> None:
     cmd = [
         FFMPEG,
@@ -211,7 +328,7 @@ def collect_scenes(
     return final_scenes
 
 
-def trim_scenes_at_keyframes(video_path: str, output_dir: str) -> list[dict[str, Any]]:
+def trim_scenes_at_keyframes(video_path: str, output_dir: str, use_improved: bool = False) -> list[dict[str, Any]]:
     os.makedirs(output_dir, exist_ok=True)
 
     total_start = time.perf_counter()
@@ -263,6 +380,10 @@ def trim_scenes_at_keyframes(video_path: str, output_dir: str) -> list[dict[str,
     thumb_end = time.perf_counter()
     log(f"TIMING|thumbs_end|seconds={thumb_end - thumb_start:.3f}")
 
+    if use_improved:
+        emit_progress(92, "Merging same-scene clips...")
+        final_scenes = merge_same_scene_clips(final_scenes, output_dir, file_name)
+
     emit_progress(100, "Done")
 
     total_end = time.perf_counter()
@@ -273,10 +394,13 @@ def trim_scenes_at_keyframes(video_path: str, output_dir: str) -> list[dict[str,
 
 def main() -> int:
     try:
-        input_file = sys.argv[1]
-        output_dir = sys.argv[2]
+        parser = argparse.ArgumentParser()
+        parser.add_argument("video_path")
+        parser.add_argument("output_dir")
+        parser.add_argument("--use-improved", action="store_true", dest="use_improved")
+        args = parser.parse_args()
 
-        scenes = trim_scenes_at_keyframes(input_file, output_dir)
+        scenes = trim_scenes_at_keyframes(args.video_path, args.output_dir, use_improved=args.use_improved)
 
         # stdout is reserved for the final JSON response.
         # Rust reads this, then React parses it.

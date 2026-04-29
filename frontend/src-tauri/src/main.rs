@@ -229,6 +229,7 @@ async fn detect_scenes(
     sidecar_state: State<'_, ActiveSidecar>,
     video_path: String,
     episode_cache_id: Option<String>,
+    use_improved_detection: bool,
 ) -> Result<String, String> {
     let video_name = file_name_only(&video_path);
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -282,8 +283,11 @@ async fn detect_scenes(
         apply_no_window(&mut cmd);
         cmd.arg(script_path)
             .arg(&video_path)
-            .arg(&output_dir_str)
-            .stdout(Stdio::piped())
+            .arg(&output_dir_str);
+        if use_improved_detection {
+            cmd.arg("--use-improved");
+        }
+        cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to spawn python: {e}"))?
@@ -323,8 +327,11 @@ async fn detect_scenes(
         apply_no_window(&mut cmd);
         cmd.current_dir(&exe_dir)
             .arg(&video_path)
-            .arg(&output_dir_str)
-            .stdout(Stdio::piped())
+            .arg(&output_dir_str);
+        if use_improved_detection {
+            cmd.arg("--use-improved");
+        }
+        cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to spawn backend exe: {e}"))?

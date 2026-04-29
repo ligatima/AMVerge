@@ -5,6 +5,7 @@ import {
   saveThemeSettings,
   type ThemeSettings,
 } from "../../theme";
+import { loadAppSettings, saveAppSettings, type AppSettings } from "../../appSettings";
 
 async function fileToDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => {
@@ -19,13 +20,19 @@ export default function SettingsSection() {
   const accentId = useId();
   const bgGradientId = useId();
   const bgId = useId();
+  const improvedDetectionId = useId();
 
   const [settings, setSettings] = useState<ThemeSettings>(() => loadThemeSettings());
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => loadAppSettings());
 
   useEffect(() => {
     applyThemeSettings(settings);
     saveThemeSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    saveAppSettings(appSettings);
+  }, [appSettings]);
 
   return (
     <section className="settings-section">
@@ -98,6 +105,23 @@ export default function SettingsSection() {
                 >
                     Clear
                 </button>
+            </div>
+        </div>
+        <h3>Scene detection</h3>
+        <div className="settings-row">
+            <label className="settings-label" htmlFor={improvedDetectionId}>
+            Improved detection
+            </label>
+            <div className="settings-control">
+            <input
+                id={improvedDetectionId}
+                type="checkbox"
+                checked={appSettings.useImprovedDetection}
+                onChange={(e) =>
+                setAppSettings((prev) => ({ ...prev, useImprovedDetection: e.target.checked }))
+                }
+                aria-label="Use improved scene detection"
+            />
             </div>
         </div>
     </section>
