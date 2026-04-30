@@ -402,20 +402,24 @@ export const LazyClip = memo(function LazyClip({
       {isVisible ? (
         <>
           {/* Thumbnail — always rendered when visible, hidden on hover */}
-          <img
-            ref={thumbnailRef}
-            className="clip"
-            src={`${convertFileSrc(clip.thumbnail)}?v=${importToken}`}
-            style={{ opacity: shouldShowThumbnail ? 1 : 0 }}
-            draggable={false}
-            onLoad={(e) => {
-              updateDownloadToneFromThumbnail(e.currentTarget);
-            }}
-            onDragStart={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          />
+          {clip.thumbnailReady === false ? (
+            <div className="clip clip-skeleton" style={{ opacity: shouldShowThumbnail ? 1 : 0 }} />
+          ) : (
+            <img
+              ref={thumbnailRef}
+              className="clip"
+              src={`${convertFileSrc(clip.thumbnail)}?v=${importToken}`}
+              style={{ opacity: shouldShowThumbnail ? 1 : 0 }}
+              draggable={false}
+              onLoad={(e) => {
+                updateDownloadToneFromThumbnail(e.currentTarget);
+              }}
+              onDragStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            />
+          )}
           {/* Video - only mounted when hovered or gridPreview, otherwise skip the DOM node entirely */}
           {shouldMountVideo && (
             <video

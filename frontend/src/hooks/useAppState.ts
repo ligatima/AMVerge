@@ -1,4 +1,4 @@
-import React, { useReducer } from "react";
+import React, { useReducer, useRef } from "react";
 import { ClipItem, EpisodeEntry, EpisodeFolder } from "../types/domain";
 
 export type AppState = {
@@ -24,7 +24,12 @@ export type AppAction =
   | { type: "setOpenedEpisodeId"; value: string | null }
   | { type: "setSelectedFolderId"; value: string | null }
   | { type: "setImportedVideoPath"; value: string | null }
-  | { type: "setVideoIsHEVC"; value: boolean | null };
+  | { type: "setVideoIsHEVC"; value: boolean | null }
+  // Streaming import actions — reducer has current state so no stale-closure risk
+  | { type: "importEpisodeReady"; episode: EpisodeEntry; clips: ClipItem[] }
+  | { type: "clipThumbnailReady"; clipId: string }
+  | { type: "removeClip"; clipId: string; episodeId: string; mergingIntoClipId: string }
+  | { type: "finalizeActiveEpisode"; episodeId: string };
 
 const initialState: AppState = {
   focusedClip: null,
@@ -51,20 +56,78 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "setSelectedFolderId": return { ...state, selectedFolderId: action.value };
     case "setImportedVideoPath": return { ...state, importedVideoPath: action.value };
     case "setVideoIsHEVC": return { ...state, videoIsHEVC: action.value };
+
+    case "importEpisodeReady":
+      return {
+        ...state,
+        clips: action.clips,
+        episodes: [action.episode, ...state.episodes],
+        selectedEpisodeId: action.episode.id,
+        openedEpisodeId: action.episode.id,
+      };
+
+    case "clipThumbnailReady":
+      return {
+        ...state,
+        clips: state.clips.map(c =>
+          c.id === action.clipId ? { ...c, thumbnailReady: true } : c
+        ),
+      };
+
+    case "removeClip": {
+      const removed = state.clips.find(c => c.id === action.clipId);
+      const removedSrcs = removed ? (removed.mergedSrcs ?? [removed.src]) : [];
+      const mergeInto = (c: ClipItem) =>
+        c.id !== action.mergingIntoClipId ? c : {
+          ...c,
+          mergedSrcs: [...removedSrcs, ...(c.mergedSrcs ?? [c.src])],
+        };
+      return {
+        ...state,
+        clips: state.clips.filter(c => c.id !== action.clipId).map(mergeInto),
+        episodes: state.episodes.map(ep =>
+          ep.id !== action.episodeId ? ep : {
+            ...ep,
+            clips: ep.clips.filter(c => c.id !== action.clipId).map(mergeInto),
+          }
+        ),
+      };
+    }
+
+    case "finalizeActiveEpisode": {
+      const finalClips = state.clips.map(c => {
+        const { thumbnailReady: _ignored, ...rest } = c;
+        return rest as ClipItem;
+      });
+      return {
+        ...state,
+        clips: finalClips,
+        episodes: state.episodes.map(ep =>
+          ep.id === action.episodeId
+            ? { ...ep, clips: finalClips }
+            : ep
+        ),
+      };
+    }
+
     default: return state;
   }
 }
 
 export default function useAppState() {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
-  function makeReducerSetter<T>(type: AppAction["type"], current: T) {
-    return (value: React.SetStateAction<T>) => {
+  function makeReducerSetter<K extends keyof AppState>(
+    type: AppAction["type"],
+    key: K
+  ) {
+    return (value: React.SetStateAction<AppState[K]>) => {
       const resolved =
         typeof value === "function"
-          ? (value as (prev: T) => T)(current)
+          ? (value as (prev: AppState[K]) => AppState[K])(stateRef.current[key])
           : value;
-
       dispatch({ type, value: resolved } as AppAction);
     };
   }
@@ -72,15 +135,23 @@ export default function useAppState() {
   return {
     state,
     dispatch,
-    setFocusedClip: makeReducerSetter<string | null>("setFocusedClip", state.focusedClip),
-    setSelectedClips: makeReducerSetter<Set<string>>("setSelectedClips", state.selectedClips),
-    setClips: makeReducerSetter<ClipItem[]>("setClips", state.clips),
-    setEpisodes: makeReducerSetter<EpisodeEntry[]>("setEpisodes", state.episodes),
-    setSelectedEpisodeId: makeReducerSetter<string | null>("setSelectedEpisodeId", state.selectedEpisodeId),
-    setEpisodeFolders: makeReducerSetter<EpisodeFolder[]>("setEpisodeFolders", state.episodeFolders),
-    setOpenedEpisodeId: makeReducerSetter<string | null>("setOpenedEpisodeId", state.openedEpisodeId),
-    setSelectedFolderId: makeReducerSetter<string | null>("setSelectedFolderId", state.selectedFolderId),
-    setImportedVideoPath: makeReducerSetter<string | null>("setImportedVideoPath", state.importedVideoPath),
-    setVideoIsHEVC: makeReducerSetter<boolean | null>("setVideoIsHEVC", state.videoIsHEVC),
+    setFocusedClip: makeReducerSetter("setFocusedClip", "focusedClip"),
+    setSelectedClips: makeReducerSetter("setSelectedClips", "selectedClips"),
+    setClips: makeReducerSetter("setClips", "clips"),
+    setEpisodes: makeReducerSetter("setEpisodes", "episodes"),
+    setSelectedEpisodeId: makeReducerSetter("setSelectedEpisodeId", "selectedEpisodeId"),
+    setEpisodeFolders: makeReducerSetter("setEpisodeFolders", "episodeFolders"),
+    setOpenedEpisodeId: makeReducerSetter("setOpenedEpisodeId", "openedEpisodeId"),
+    setSelectedFolderId: makeReducerSetter("setSelectedFolderId", "selectedFolderId"),
+    setImportedVideoPath: makeReducerSetter("setImportedVideoPath", "importedVideoPath"),
+    setVideoIsHEVC: makeReducerSetter("setVideoIsHEVC", "videoIsHEVC"),
+    importEpisodeReady: (episode: EpisodeEntry, clips: ClipItem[]) =>
+      dispatch({ type: "importEpisodeReady", episode, clips }),
+    clipThumbnailReady: (clipId: string) =>
+      dispatch({ type: "clipThumbnailReady", clipId }),
+    removeClip: (clipId: string, episodeId: string, mergingIntoClipId: string) =>
+      dispatch({ type: "removeClip", clipId, episodeId, mergingIntoClipId }),
+    finalizeActiveEpisode: (episodeId: string) =>
+      dispatch({ type: "finalizeActiveEpisode", episodeId }),
   };
 }

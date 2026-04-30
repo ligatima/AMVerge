@@ -21,6 +21,7 @@ import HomePage from "./pages/HomePage";
 import Menu from "./pages/Menu";
 import Settings from "./pages/Settings";
 import LoadingOverlay from "./components/LoadingOverlay";
+import BgProgressBar from "./components/BgProgressBar";
 import { type Page } from "./components/sidebar/types";
 
 import useAppState from "./hooks/useAppState";
@@ -51,6 +52,10 @@ function App() {
     setSelectedFolderId,
     setImportedVideoPath,
     setVideoIsHEVC,
+    importEpisodeReady,
+    clipThumbnailReady,
+    removeClip,
+    finalizeActiveEpisode,
   } = useAppState();
 
   // Refs
@@ -136,6 +141,7 @@ function App() {
     batchTotal,
     batchDone,
     batchCurrentFile,
+    bgProgress,
     onImportClick,
     handleImport,
     handleExport,
@@ -144,6 +150,7 @@ function App() {
     handleDownloadSingleClip,
   } = useImportExport({
     clips: state.clips,
+    selectedClips: state.selectedClips,
     setProgress,
     setProgressMsg,
     setFocusedClip,
@@ -163,6 +170,10 @@ function App() {
     exportFormat: generalSettings.exportFormat,
     onRPCUpdate: updateRPC,
     generalSettings,
+    importEpisodeReady,
+    clipThumbnailReady,
+    removeClip,
+    finalizeActiveEpisode,
   });
 
   // Episode panel actions
@@ -458,6 +469,8 @@ function App() {
             batchCurrentFile={batchCurrentFile}
             onAbort={handleAbort}
           />
+        ) : bgProgress ? (
+          <BgProgressBar done={bgProgress.done} total={bgProgress.total} />
         ) : null
       }
       sidebarProps={{

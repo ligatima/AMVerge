@@ -3,6 +3,8 @@ export type ClipItem = {
   src: string;
   thumbnail: string;
   originalName?: string;
+  thumbnailReady?: boolean; // false = actively generating; undefined/true = ready
+  mergedSrcs?: string[];   // all source files this clip represents (set when clips are merged)
 };
 
 export type EpisodeFolder = {
