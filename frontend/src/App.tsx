@@ -150,7 +150,6 @@ function App() {
     handleDownloadSingleClip,
   } = useImportExport({
     clips: state.clips,
-    selectedClips: state.selectedClips,
     setProgress,
     setProgressMsg,
     setFocusedClip,

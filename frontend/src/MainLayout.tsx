@@ -15,7 +15,7 @@ type LayoutProps = {
     setSelectedClips: React.Dispatch<
         React.SetStateAction<Set<string>>
     >;
-    clips: { id: string; src: string; thumbnail: string }[];
+    clips: { id: string; src: string; thumbnail: string; mergedSrcs?: string[] }[];
     importToken: string;
     loading: boolean;
     isEmpty: boolean;
@@ -42,13 +42,12 @@ type LayoutProps = {
 export default function MainLayout(props: LayoutProps) {
     const [leftWidth, setLeftWidth] = useState(65);
 
-    const focusedClipThumbnail = useMemo(
-        () =>
-            props.focusedClip
-                ? props.clips.find((c) => c.src === props.focusedClip)?.thumbnail ?? null
-                : null,
+    const focusedClipObj = useMemo(
+        () => props.focusedClip ? props.clips.find((c) => c.src === props.focusedClip) ?? null : null,
         [props.focusedClip, props.clips]
     );
+    const focusedClipThumbnail = focusedClipObj?.thumbnail ?? null;
+    const focusedClipMergedSrcs = focusedClipObj?.mergedSrcs;
 
     // track active resize listeners so we can clean up on unmount.
     const resizeCleanupRef = useRef<(() => void) | null>(null);
@@ -125,9 +124,10 @@ export default function MainLayout(props: LayoutProps) {
 
 
             <div className="right-pane" style={{ width: `${100 - leftWidth}%` }}>
-                <PreviewContainer 
+                <PreviewContainer
                     focusedClip={props.focusedClip}
                     focusedClipThumbnail={focusedClipThumbnail}
+                    focusedClipMergedSrcs={focusedClipMergedSrcs}
                     selectedClips={props.selectedClips}
                     handleExport={props.handleExport}
                     videoIsHEVC={props.videoIsHEVC}

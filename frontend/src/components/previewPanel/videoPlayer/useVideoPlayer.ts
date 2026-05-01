@@ -4,12 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 
 type UseVideoPlayerArgs = {
     selectedClip: string;
+    mergedSrcs?: string[];
     videoIsHEVC: boolean | null;
     userHasHEVC: RefObject<boolean>;
 };
 
 export function useVideoPlayer({
     selectedClip,
+    mergedSrcs,
     videoIsHEVC,
     userHasHEVC,
 }: UseVideoPlayerArgs) {
@@ -19,6 +21,8 @@ export function useVideoPlayer({
     const selectedClipRef = useRef<string>(selectedClip);
     const proxyInFlightRef = useRef(false);
     const proxyAttemptedForClipRef = useRef<string | null>(null);
+    const mergedPreviewInFlightRef = useRef(false);
+    const mergedPreviewFetchedKeyRef = useRef<string | null>(null);
 
     const hasFirstFrameRef = useRef(false);
     const videoFrameCallbackIdRef = useRef<number | null>(null);
@@ -27,6 +31,8 @@ export function useVideoPlayer({
     const rafRef = useRef<number | null>(null);
 
     const [effectiveClip, setEffectiveClip] = useState<string | null>(selectedClip);
+    const [mergedPreviewPath, setMergedPreviewPath] = useState<string | null>(null);
+    const mergedSrcsKey = mergedSrcs ? mergedSrcs.join("|") : null;
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [isPlaying, setIsPlaying] = useState(true);
     const [isMuted, setIsMuted] = useState(false);
@@ -207,6 +213,9 @@ export function useVideoPlayer({
         proxyInFlightRef.current = false;
         proxyAttemptedForClipRef.current = null;
         hasFirstFrameRef.current = false;
+        mergedPreviewInFlightRef.current = false;
+        mergedPreviewFetchedKeyRef.current = null;
+        setMergedPreviewPath(null);
 
         if (videoFrameCallbackIdRef.current && (video as any).cancelVideoFrameCallback) {
             try {
@@ -232,24 +241,35 @@ export function useVideoPlayer({
             return;
         }
 
+        // For non-HEVC (or HEVC-capable) clips, the base source is the merged preview if available.
+        // For HEVC clips needing a proxy, skip merged preview and proxy the original clip.
+        const baseSrc = mergedPreviewPath ?? selectedClip;
+
         if (hasHevcSupport) {
-            if (effectiveClip !== selectedClip) setEffectiveClip(selectedClip);
-            setIsVideoReady(false);
+            if (effectiveClip !== baseSrc) {
+                setEffectiveClip(baseSrc);
+                setIsVideoReady(false);
+            }
             return;
         }
 
         if (videoIsHEVC === null) {
-            if (effectiveClip !== null) setEffectiveClip(null);
-            setIsVideoReady(false);
+            if (effectiveClip !== null) {
+                setEffectiveClip(null);
+                setIsVideoReady(false);
+            }
             return;
         }
 
         if (videoIsHEVC === false) {
-            if (effectiveClip !== selectedClip) setEffectiveClip(selectedClip);
-            setIsVideoReady(false);
+            if (effectiveClip !== baseSrc) {
+                setEffectiveClip(baseSrc);
+                setIsVideoReady(false);
+            }
             return;
         }
 
+        // videoIsHEVC === true && !hasHevcSupport: proxy the original clip (skip merged preview)
         if (effectiveClip && effectiveClip !== selectedClip) return;
         if (proxyInFlightRef.current) return;
         if (proxyAttemptedForClipRef.current === selectedClip) return;
@@ -280,7 +300,32 @@ export function useVideoPlayer({
                 proxyInFlightRef.current = false;
                 if (import.meta.env.DEV) console.warn("ensure_preview_proxy failed", err);
             });
-    }, [selectedClip, videoIsHEVC, hasHevcSupport, effectiveClip]);
+    }, [selectedClip, videoIsHEVC, hasHevcSupport, effectiveClip, mergedPreviewPath]);
+
+    // Fetch stream-copy merged preview when the focused clip has merged sources (skipped for HEVC).
+    useEffect(() => {
+        if (!mergedSrcsKey || !mergedSrcs) return;
+        if (videoIsHEVC === true && !hasHevcSupport) return;
+        if (!selectedClip) return;
+        if (mergedPreviewFetchedKeyRef.current === mergedSrcsKey) return;
+        if (mergedPreviewInFlightRef.current) return;
+
+        mergedPreviewFetchedKeyRef.current = mergedSrcsKey;
+        mergedPreviewInFlightRef.current = true;
+
+        invoke<string>("ensure_merged_preview", { srcs: mergedSrcs })
+            .then((path) => {
+                if (selectedClipRef.current !== selectedClip) return;
+                setMergedPreviewPath(path);
+            })
+            .catch((err) => {
+                if (import.meta.env.DEV) console.warn("ensure_merged_preview failed", err);
+                mergedPreviewFetchedKeyRef.current = null;
+            })
+            .finally(() => {
+                mergedPreviewInFlightRef.current = false;
+            });
+    }, [mergedSrcsKey, mergedSrcs, selectedClip, videoIsHEVC, hasHevcSupport]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

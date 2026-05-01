@@ -15,6 +15,7 @@ const EXPORT_OPTIONS = [
 type PreviewContainerProps = {
   focusedClip: string | null;
   focusedClipThumbnail: string | null;
+  focusedClipMergedSrcs?: string[];
   selectedClips: Set<string>;
   videoIsHEVC: boolean | null;
   userHasHEVC: React.RefObject<boolean>;
@@ -64,8 +65,9 @@ export default function PreviewContainer (props: PreviewContainerProps) {
     <main  className="preview-container" >
       <div className="preview-window">
         {props.focusedClip ? (
-          <VideoPlayer 
+          <VideoPlayer
            selectedClip={props.focusedClip}
+           mergedSrcs={props.focusedClipMergedSrcs}
            videoIsHEVC={props.videoIsHEVC}
            userHasHEVC={props.userHasHEVC}
            posterPath={props.focusedClipThumbnail}

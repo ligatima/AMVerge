@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -9,7 +9,6 @@ import { GeneralSettings } from "../settings/generalSettings";
 type ImportExportProps = {
   abortedRef: React.RefObject<boolean>;
   clips: ClipItem[];
-  selectedClips: Set<string>;
   setFocusedClip: React.Dispatch<React.SetStateAction<string | null>>;
   setSelectedClips: React.Dispatch<React.SetStateAction<Set<string>>>;
   setVideoIsHEVC: React.Dispatch<React.SetStateAction<boolean | null>>;
@@ -47,28 +46,11 @@ export default function useImportExport(props: ImportExportProps) {
 
   // Refs for streaming scene detection state (reset on each import).
   const positionToIdRef = useRef(new Map<number, string>());
-  const thumbnailReadySetRef = useRef(new Set<string>());
-  const gapClipsRef = useRef(new Set<string>());
-  const prevSelectedClipsRef = useRef(new Set<string>());
-
-  // Track newly selected clips against thumbnail readiness (for gap detection).
-  useEffect(() => {
-    const prev = prevSelectedClipsRef.current;
-    for (const id of props.selectedClips) {
-      if (!prev.has(id) && !thumbnailReadySetRef.current.has(id)) {
-        gapClipsRef.current.add(id);
-      }
-    }
-    prevSelectedClipsRef.current = new Set(props.selectedClips);
-  }, [props.selectedClips]);
 
   // ── Streaming helpers ────────────────────────────────────────────────────────
 
   function resetStreamingRefs() {
     positionToIdRef.current = new Map();
-    thumbnailReadySetRef.current = new Set();
-    gapClipsRef.current = new Set();
-    prevSelectedClipsRef.current = new Set();
   }
 
   function parseInitialClips(clipsJson: string): ClipItem[] {
@@ -76,14 +58,12 @@ export default function useImportExport(props: ImportExportProps) {
     return scenes.map((s, pos) => {
       const id = crypto.randomUUID();
       positionToIdRef.current.set(pos, id);
-      const ready = s.thumbnail_ready !== false;
-      if (ready) thumbnailReadySetRef.current.add(id);
       return {
         id,
         src: s.path,
         thumbnail: s.thumbnail,
         originalName: s.original_file,
-        thumbnailReady: ready,
+        thumbnailReady: s.thumbnail_ready !== false,
       };
     });
   }
@@ -171,7 +151,6 @@ export default function useImportExport(props: ImportExportProps) {
         const clipId = positionToIdRef.current.get(event.payload.position);
         if (!clipId) return;
 
-        thumbnailReadySetRef.current.add(clipId);
         props.clipThumbnailReady(clipId);
 
         setBgProgress((prev) =>
@@ -190,9 +169,6 @@ export default function useImportExport(props: ImportExportProps) {
           const clipAId = positionToIdRef.current.get(event.payload.pos_a);
           const clipBId = positionToIdRef.current.get(event.payload.pos_b);
           if (!clipAId || !clipBId) return;
-
-          // Respect gaps: selected-while-placeholder clips break the merge chain.
-          if (gapClipsRef.current.has(clipAId) || gapClipsRef.current.has(clipBId)) return;
 
           props.removeClip(clipAId, activeEpisodeId, clipBId);
         }
@@ -275,7 +251,6 @@ export default function useImportExport(props: ImportExportProps) {
             if (importGenRef.current !== gen) return;
             const clipId = positionToIdRef.current.get(event.payload.position);
             if (!clipId) return;
-            thumbnailReadySetRef.current.add(clipId);
             batchClips = batchClips.map((c) =>
               c.id === clipId ? { ...c, thumbnailReady: true } : c
             );
@@ -290,7 +265,6 @@ export default function useImportExport(props: ImportExportProps) {
               const clipAId = positionToIdRef.current.get(event.payload.pos_a);
               const clipBId = positionToIdRef.current.get(event.payload.pos_b);
               if (!clipAId || !clipBId) return;
-              if (gapClipsRef.current.has(clipAId) || gapClipsRef.current.has(clipBId)) return;
               const removed = batchClips.find(c => c.id === clipAId);
               const removedSrcs = removed ? (removed.mergedSrcs ?? [removed.src]) : [];
               batchClips = batchClips
