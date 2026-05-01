@@ -521,6 +521,7 @@ function App() {
             setSelectedClips={setSelectedClips}
             onImportClick={onImportClick}
             loading={loading}
+            bgProcessing={bgProgress !== null}
             mainLayoutWrapperRef={mainLayoutWrapperRef}
             gridRef={gridRef}
             clips={state.clips}

@@ -17,6 +17,7 @@ interface HomePageProps {
   setSelectedClips: (val: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
   onImportClick: () => void;
   loading: boolean;
+  bgProcessing: boolean;
   mainLayoutWrapperRef: React.RefObject<HTMLDivElement | null>;
   clips: { id: string; src: string; thumbnail: string; originalName?: string }[];
   importToken: string;
@@ -55,6 +56,7 @@ export default function HomePage({
   setSelectedClips,
   onImportClick,
   loading,
+  bgProcessing,
   mainLayoutWrapperRef,
   clips,
   importToken,
@@ -89,6 +91,7 @@ export default function HomePage({
         setSelectedClips={setSelectedClips}
         onImport={onImportClick}
         loading={loading}
+        bgProcessing={bgProcessing}
       />
 
       <div className="main-layout-wrapper" ref={mainLayoutWrapperRef}>

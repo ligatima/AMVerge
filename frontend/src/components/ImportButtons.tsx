@@ -11,6 +11,7 @@ type ImportButtonsProps = {
   >;
   onImport: () => void;
   loading: boolean;
+  bgProcessing: boolean;
 };
 
 export default function ImportButtons(props: ImportButtonsProps) {
@@ -19,11 +20,11 @@ export default function ImportButtons(props: ImportButtonsProps) {
   return (
       <main className="clips-import">
         <div className="import-buttons-container">
-          <button onClick={() => { props.onImport();}}      
-                  disabled={props.loading}
+          <button onClick={() => { props.onImport();}}
+                  disabled={props.loading || props.bgProcessing}
                   id="file-button"
           >
-            {props.loading ? "Processing...": "Import Episode"}
+            {props.loading || props.bgProcessing ? "Processing..." : "Import Episode"}
           </button>
         </div>
         <div className="grid-checkboxes">
