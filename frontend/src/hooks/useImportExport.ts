@@ -152,6 +152,13 @@ export default function useImportExport(props?: ImportExportProps) {
       });
     };
 
+    // Flag set by processing_complete to detect the race where it fires before
+    // the initial_clips_ready setTimeout has committed clips to the store.
+    let processingCompleted = false;
+
+    // pair_result events that arrived before clips were in the store — replayed after commit.
+    const pendingMerges: Array<{ clipAId: string; clipBId: string }> = [];
+
     const unlisteners: Array<() => void> = [];
     let uiUnblocked = false;
 
@@ -214,13 +221,24 @@ export default function useImportExport(props?: ImportExportProps) {
 
         // Defer expensive updates so React can paint the loading=false frame first.
         setTimeout(() => {
-          console.log(`[initial_clips_ready:setTimeout] fired at +${(performance.now() - t0).toFixed(1)}ms after setLoading(false)`);
+          console.log(`[initial_clips_ready:setTimeout] fired at +${(performance.now() - t0).toFixed(1)}ms after setLoading(false), processingCompleted=${processingCompleted}`);
           if (importGenRef.current !== gen) return;
+
           // Merge any thumbnail_ready events that fired before clips were in the store.
-          const clipsToCommit = pendingThumbnailReadyIds.size > 0
+          const clipsWithPendingThumbs = pendingThumbnailReadyIds.size > 0
             ? clips.map(c => pendingThumbnailReadyIds.has(c.id) ? { ...c, thumbnailReady: true } : c)
             : clips;
-          console.log(`[initial_clips_ready:setTimeout] committing ${clipsToCommit.length} clips to store, pendingIds=${pendingThumbnailReadyIds.size}`);
+
+          // If processing_complete already ran before this setTimeout, it stripped thumbnailReady
+          // from an empty store (race condition). Strip it here so clips are immediately clickable.
+          // Also queue any pre-store pair_result merges to be applied after commit.
+          const clipsToCommit = processingCompleted ? finalizeClips(clipsWithPendingThumbs) : clipsWithPendingThumbs;
+          if (processingCompleted && pendingMerges.length > 0) {
+            batchedMerges.push(...pendingMerges);
+            pendingMerges.length = 0;
+          }
+
+          console.log(`[initial_clips_ready:setTimeout] committing ${clipsToCommit.length} clips to store, pendingIds=${pendingThumbnailReadyIds.size}, pendingMerges=${batchedMerges.length}`);
           const t1 = performance.now();
           useEpisodePanelRuntimeStore.setState(s => ({
             episodes: [episodeEntry, ...s.episodes],
@@ -229,6 +247,11 @@ export default function useImportExport(props?: ImportExportProps) {
           }));
           useAppStateStore.setState({ clips: clipsToCommit });
           console.log(`[initial_clips_ready:setTimeout] setState took ${(performance.now() - t1).toFixed(1)}ms — store now has ${useAppStateStore.getState().clips.length} clips, bgProgress=${JSON.stringify(useAppStateStore.getState().bgProgress)}`);
+
+          // If processing_complete already ran, apply any pending merges now that clips are in the store.
+          if (processingCompleted && batchedMerges.length > 0) {
+            applyBatchedUpdates(activeEpisodeId);
+          }
         }, 0);
       });
       unlisteners.push(ul1);
@@ -283,7 +306,11 @@ export default function useImportExport(props?: ImportExportProps) {
             console.log(`[pair_result #${pairResultCount}] clipA in store: ${clipAInStore} (store=${useAppStateStore.getState().clips.length}, beforeStore=${pairResultBeforeStore})`);
           }
 
-          if (!clipAInStore) return; // Not yet in store, skip
+          if (!clipAInStore) {
+            // Store not populated yet — save for replay after the setTimeout commits clips.
+            pendingMerges.push({ clipAId, clipBId });
+            return;
+          }
 
           batchedMerges.push({ clipAId, clipBId });
           scheduleBatch(activeEpisodeId);
@@ -294,6 +321,8 @@ export default function useImportExport(props?: ImportExportProps) {
       // ── processing_complete: all thumbnails and pairs done ──────────────────
       const ul4 = await listen<void>("processing_complete", () => {
         if (importGenRef.current !== gen) return;
+
+        processingCompleted = true;
 
         // Flush any events still waiting in the batch before we finalize.
         if (batchRafId !== null) {
@@ -446,9 +475,11 @@ export default function useImportExport(props?: ImportExportProps) {
   }, [handleImport, handleBatchImport]);
 
   const handleExport = useCallback(async (selectedClips: Set<string>, mergeEnabled: boolean, mergeFileName?: string) => {
+    console.log(`[handleExport] selectedClips.size=${selectedClips.size} appState.clips.length=${appState.clips.length} IDs=[${[...selectedClips].slice(0, 3).join(',')}]`);
     if (selectedClips.size === 0) return;
 
     const selected = appState.clips.filter((c: ClipItem) => selectedClips.has(c.id));
+    console.log(`[handleExport] matched ${selected.length} clips from store`);
     if (selected.length === 0) return;
 
     let dir = persistedState.exportDir;

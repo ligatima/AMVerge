@@ -327,7 +327,8 @@ export const LazyClip = memo(function LazyClip({
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (clip.thumbnailReady !== undefined) return;
+      console.log(`[LazyClip click] id=${clip.id} thumbnailReady=${clip.thumbnailReady}`);
+      if (clip.thumbnailReady === false) return; // still generating — block
       onClipClick(clip.id, clip.src, index, e);
     },
     [clip.id, clip.src, clip.thumbnailReady, index, onClipClick]
@@ -335,7 +336,8 @@ export const LazyClip = memo(function LazyClip({
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (clip.thumbnailReady !== undefined) return;
+      console.log(`[LazyClip dblclick] id=${clip.id} thumbnailReady=${clip.thumbnailReady}`);
+      if (clip.thumbnailReady === false) return; // still generating — block
       onClipDoubleClick(clip.id, clip.src, index, e);
     },
     [clip.id, clip.src, clip.thumbnailReady, index, onClipDoubleClick]

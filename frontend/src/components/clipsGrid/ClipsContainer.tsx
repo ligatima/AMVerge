@@ -62,7 +62,7 @@ export default function ClipsContainer({ cols }: { cols?: number }) {
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
       const isShift = e.shiftKey;
 
-      // Shift-click: select a range of clips for the timeline
+      // Shift-click: select a range of clips
       if (isShift) {
         const anchorIndex = focusedClip
           ? clips.findIndex((c) => c.src === focusedClip)
@@ -77,8 +77,9 @@ export default function ClipsContainer({ cols }: { cols?: number }) {
         return;
       }
 
-      // Ctrl/Cmd-click: toggle timeline state for this clip
+      // Ctrl/Cmd-click: toggle this clip in the multi-selection
       if (isCtrlOrCmd) {
+        setFocusedClip(clipSrc);
         startTransition(() => {
           setSelectedClips((prev) => {
             const next = new Set(prev);
@@ -89,7 +90,7 @@ export default function ClipsContainer({ cols }: { cols?: number }) {
         return;
       }
 
-      // Single click: focus this clip for preview (NO timeline change)
+      // Single click: focus for preview only
       setFocusedClip(clipSrc);
     },
     [clips, focusedClip, setFocusedClip, setSelectedClips]
@@ -110,18 +111,24 @@ export default function ClipsContainer({ cols }: { cols?: number }) {
     [setTimelineClipIds]
   );
 
-  // Handles double-click on a clip tile (toggle timeline/export selection — checkmark only)
+  // Handles double-click on a clip tile: toggle timeline + multi-select toggle + focus
   const handleClipDoubleClick = useCallback(
-    (clipId: string, _clipSrc: string, _index: number, _e: React.MouseEvent<HTMLDivElement>) => {
+    (clipId: string, clipSrc: string, _index: number, _e: React.MouseEvent<HTMLDivElement>) => {
+      setFocusedClip(clipSrc);
       startTransition(() => {
         setTimelineClipIds((prev) => {
           const next = new Set(prev);
           next.has(clipId) ? next.delete(clipId) : next.add(clipId);
           return next;
         });
+        setSelectedClips((prev) => {
+          const next = new Set(prev);
+          next.has(clipId) ? next.delete(clipId) : next.add(clipId);
+          return next;
+        });
       });
     },
-    [setTimelineClipIds]
+    [setFocusedClip, setTimelineClipIds, setSelectedClips]
   );
 
 
